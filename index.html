@@ -1,29 +1,64 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Private Photo App</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
-    body{font-family:Arial;text-align:center}
-    img{width:120px;margin:8px}
-  </style>
+<meta charset="UTF-8" />
+<title>Private Photo App</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+body{
+  font-family:Arial;
+  text-align:center;
+  background:#f5f5f5;
+}
+.container{
+  max-width:400px;
+  margin:auto;
+  background:white;
+  padding:20px;
+  border-radius:10px;
+  box-shadow:0 0 10px rgba(0,0,0,0.1);
+}
+input,button{
+  width:100%;
+  padding:10px;
+  margin:5px 0;
+}
+img{
+  width:100px;
+  margin:5px;
+  border-radius:8px;
+}
+#gallery{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+</style>
 </head>
+
 <body>
 
+<div class="container">
+
 <h2>Login / Register</h2>
-<input type="email" id="email" placeholder="Email"><br><br>
-<input type="password" id="password" placeholder="Password"><br><br>
+
+<input type="email" id="email" placeholder="Email">
+<input type="password" id="password" placeholder="Password">
+
 <button onclick="register()">Register</button>
 <button onclick="login()">Login</button>
+<button onclick="logout()">Logout</button>
 
 <hr>
 
 <h2>Upload Photo</h2>
-<input type="file" id="file"><br><br>
+<input type="file" id="file">
 <button onclick="upload()">Upload</button>
 
 <div id="gallery"></div>
+
+</div>
 
 <script>
 const supabase = window.supabase.createClient(
@@ -34,40 +69,84 @@ const supabase = window.supabase.createClient(
 async function register(){
   const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
-  await supabase.auth.signUp({ email, password });
-  alert("Registered! Check email if needed.");
+
+  const { data, error } = await supabase.auth.signUp({ email, password });
+
+  if(error){
+    alert("Register Error: " + error.message);
+  } else {
+    alert("Registered Successfully");
+  }
 }
 
 async function login(){
   const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
-  await supabase.auth.signInWithPassword({ email, password });
-  alert("Login Success");
-  loadImages();
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if(error){
+    alert("Login Error: " + error.message);
+  } else {
+    alert("Login Success");
+    loadImages();
+  }
+}
+
+async function logout(){
+  await supabase.auth.signOut();
+  alert("Logged out");
+  document.getElementById("gallery").innerHTML="";
 }
 
 async function upload(){
   const file = document.getElementById("file").files[0];
-  const user = (await supabase.auth.getUser()).data.user;
+  const { data:userData } = await supabase.auth.getUser();
+
+  if(!userData.user){
+    alert("Please login first");
+    return;
+  }
+
+  const filePath = userData.user.id + "/" + file.name;
+
   const { error } = await supabase.storage
     .from("photos")
-    .upload(user.id + "/" + file.name, file, { upsert:true });
-  if(!error){ alert("Uploaded"); loadImages(); }
+    .upload(filePath, file, { upsert:true });
+
+  if(error){
+    alert("Upload Error: " + error.message);
+  } else {
+    alert("Uploaded");
+    loadImages();
+  }
 }
 
 async function loadImages(){
-  const user = (await supabase.auth.getUser()).data.user;
-  const { data } = await supabase.storage
+  const { data:userData } = await supabase.auth.getUser();
+  if(!userData.user) return;
+
+  const { data, error } = await supabase.storage
     .from("photos")
-    .list(user.id);
+    .list(userData.user.id);
+
+  if(error){
+    alert("Load Error: " + error.message);
+    return;
+  }
+
   const gallery = document.getElementById("gallery");
   gallery.innerHTML="";
+
   for(const file of data){
-    const { data:urlData } = supabase.storage
+    const filePath = userData.user.id + "/" + file.name;
+
+    const { data:signed } = await supabase.storage
       .from("photos")
-      .getPublicUrl(user.id + "/" + file.name);
+      .createSignedUrl(filePath, 3600);
+
     const img = document.createElement("img");
-    img.src = urlData.publicUrl;
+    img.src = signed.signedUrl;
     gallery.appendChild(img);
   }
 }
